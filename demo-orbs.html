@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #f5f0e8;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  cursor: crosshair;
+}
+
+/* One span per line; word-spacing set via JS for justification */
+.line {
+  position: absolute;
+  font: 18px/1 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+  color: #1c1612;
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+}
+
+/* Orb sizing handled entirely in JS; gradient/shadow set per-orb */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  cursor: default;
+}
+
+/* Pop burst: CSS handles the visual; JS decreases r for text reflow */
+@keyframes pop-burst {
+  0%   { transform: scale(1);   opacity: 1;   }
+  35%  { transform: scale(1.5); opacity: 0.6; }
+  100% { transform: scale(2.8); opacity: 0;   }
+}
+.orb.popping {
+  animation: pop-burst 260ms cubic-bezier(0.2, 0, 0.7, 1) forwards;
+  pointer-events: none;
+}
+
+.hint {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: italic 13px/1 'Libre Baskerville', Georgia, serif;
+  color: #9a8878;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<p class="hint">Click and hold to place an orb · Double-click an orb to remove it</p>
+<script type="module">
+import { prepareWithSegments, layoutNextLine }
+  from 'https://esm.sh/@chenglou/pretext@0.0.4';
+
+// ── Configuration ──────────────────────────────────────────────────────
+const FONT       = '18px "Libre Baskerville", Georgia, "Times New Roman", serif';
+const LINE_H     = 32;
+const COL_FRAC   = 0.60;
+const TOP_PX     = Math.round(window.innerHeight * 0.09);
+const MAX_R      = 120;     // max orb radius in px
+const GROW_MS    = 2000;    // ms to reach MAX_R (ease-out)
+const POP_MS     = 600;     // ms for text to reflow back after pop
+const H_PAD      = 12;      // horizontal clearance around orb
+const MIN_SLOT_W = 60;      // min line width — narrower lines are skipped
+
+// ── Prose: Joseph Conrad, "Lord Jim" (1900) — public domain ───────────
+const PROSE = [
+  'A marvellous stillness pervaded the world, and the stars, together with',
+  'the serenity of their rays, seemed to shed upon the earth the assurance',
+  'of everlasting security. The young moon recurved, and shining low in the',
+  'west, was like a slender shaving thrown up from a bar of gold, and the',
+  'Arabian Sea, smooth and cool to the eye like a sheet of ice, extended',
+  'its perfect level to the perfect circle of a dark horizon. The propeller',
+  'turned without a check, as though its beat had been part of the scheme',
+  'of a safe universe; and on each side of the Patna two deep folds of',
+  'water, permanent and sombre on the unwrinkled shimmer, enclosed within',
+  'their straight and diverging ridges a few white swirls of foam bursting',
+  'in a low hiss, a few wavelets, a few ripples, a lot of calm.',
+].join(' ');
+
+// ── Geometry ───────────────────────────────────────────────────────────
+const COL_W     = Math.round(window.innerWidth * COL_FRAC);
+const COL_LEFT  = Math.round((window.innerWidth - COL_W) / 2);
+const COL_RIGHT = COL_LEFT + COL_W;
+
+// Canvas for measurement — same font engine as Pretext
+const mc  = document.createElement('canvas').getContext('2d');
+mc.font   = FONT;
+const mw  = t => mc.measureText(t).width;
+
+// ── Orb colour palette ─────────────────────────────────────────────────
+const PALETTE = [
+  [205, 125,  90],   // terracotta
+  [ 85, 148, 210],   // steel blue
+  [115, 188, 138],   // sage green
+  [172, 128, 205],   // lavender
+  [222, 178,  72],   // amber
+];
+let paletteIdx = 0;
+
+const stage = document.getElementById('stage');
+let prepared  = null;
+
+// ── Circle–band intersection ───────────────────────────────────────────
+// Returns the widest horizontal interval blocked by circle (cx,cy,r)
+// across vertical band [top, bottom], with H_PAD padding. null if no hit.
+function circleInterval(cx, cy, r, top, bottom) {
+  if (top >= cy + r || bottom <= cy - r) return null;
+  // Closest y in [top, bottom] to center — gives widest chord in band
+  const nearY = cy < top ? top : cy > bottom ? bottom : cy;
+  const dy = Math.abs(cy - nearY);
+  if (dy >= r) return null;
+  const dx = Math.sqrt(r * r - dy * dy);
+  return { left: cx - dx - H_PAD, right: cx + dx + H_PAD };
+}
+
+// ── Slot carver — find widest gap after all orb exclusions ────────────
+function getSlot(bandTop, bandBottom) {
+  const blocked = [];
+  for (const orb of orbs) {
+    if (orb.r <= 0) continue;
+    const iv = circleInterval(orb.x, orb.y, orb.r, bandTop, bandBottom);
+    if (!iv) continue;
+    // Clamp to column bounds
+    if (iv.right <= COL_LEFT || iv.left >= COL_RIGHT) continue;
+    blocked.push({ left: Math.max(iv.left, COL_LEFT), right: Math.min(iv.right, COL_RIGHT) });
+  }
+
+  // Carve blocked intervals out of the full column slot
+  let slots = [{ left: COL_LEFT, right: COL_RIGHT }];
+  for (const b of blocked) {
+    const next = [];
+    for (const s of slots) {
+      if (b.right <= s.left || b.left >= s.right) {
+        next.push(s);
+      } else {
+        if (b.left  > s.left)  next.push({ left: s.left, right: b.left });
+        if (b.right < s.right) next.push({ left: b.right, right: s.right });
+      }
+    }
+    slots = next;
+  }
+
+  const valid = slots.filter(s => s.right - s.left >= MIN_SLOT_W);
+  if (!valid.length) return null;
+  // Return widest valid slot
+  return valid.reduce((a, b) => b.right - b.left > a.right - a.left ? b : a);
+}
+
+// ── Line span pool ─────────────────────────────────────────────────────
+const pool = [];
+
+function syncPool(n) {
+  while (pool.length < n) {
+    const el = document.createElement('span');
+    el.className = 'line';
+    stage.appendChild(el);
+    pool.push(el);
+  }
+  for (let i = 0; i < pool.length; i++) {
+    pool[i].style.display = i < n ? '' : 'none';
+  }
+}
+
+// ── Layout & render text ───────────────────────────────────────────────
+// Uses layoutNextLine so each line can have a different available width
+// depending on which orbs intersect that band.
+function renderText() {
+  if (!prepared) return;
+
+  let cursor = { segmentIndex: 0, graphemeIndex: 0 };
+  let lineTop = TOP_PX;
+  const lines = [];
+
+  while (lineTop + LINE_H <= window.innerHeight) {
+    const slot = getSlot(lineTop, lineTop + LINE_H);
+
+    if (!slot) {
+      // Entire band blocked — skip this row without advancing text
+      lineTop += LINE_H;
+      continue;
+    }
+
+    const line = layoutNextLine(prepared, cursor, slot.width);
+    if (!line) break;   // text exhausted
+
+    lines.push({
+      text: line.text,
+      lw:   line.width,   // actual measured width (for justification)
+      x:    slot.left,
+      w:    slot.width,   // available slot width
+      y:    lineTop,
+    });
+    cursor  = line.end;
+    lineTop += LINE_H;
+  }
+
+  syncPool(lines.length);
+
+  for (let i = 0; i < lines.length; i++) {
+    const { text, lw, x, w, y } = lines[i];
+    const isLast = i === lines.length - 1;
+    const el = pool[i];
+
+    el.textContent = text;
+    el.style.left  = `${x}px`;
+    el.style.top   = `${y}px`;
+    el.style.width = `${w}px`;
+
+    // Distribute extra space between words (CSS word-spacing adds to each gap)
+    // word-spacing = (availableWidth - measuredWidth) / numberOfGaps
+    const words = text.split(/\s+/).filter(Boolean);
+    const gaps  = words.length - 1;
+    if (!isLast && gaps > 0) {
+      el.style.wordSpacing = `${(w - lw) / gaps}px`;
+    } else {
+      el.style.wordSpacing = '';
+    }
+  }
+}
+
+// ── Orbs ──────────────────────────────────────────────────────────────
+const orbs = [];
+
+function createOrb(x, y) {
+  const [r, g, b] = PALETTE[paletteIdx % PALETTE.length];
+  paletteIdx++;
+
+  const el = document.createElement('div');
+  el.className = 'orb';
+
+  // Soft radial gradient with offset highlight for dimensionality
+  el.style.background = `radial-gradient(
+    circle at 38% 33%,
+    rgba(${r},${g},${b},0.70),
+    rgba(${r},${g},${b},0.38) 40%,
+    rgba(${r},${g},${b},0.14) 65%,
+    rgba(${r},${g},${b},0.04) 80%,
+    transparent 95%
+  )`;
+
+  // Two-layer glow for physical depth
+  el.style.boxShadow = `
+    0 0 35px  8px rgba(${r},${g},${b},0.30),
+    0 0 90px 28px rgba(${r},${g},${b},0.12)
+  `;
+
+  stage.appendChild(el);
+
+  const orb = {
+    el,
+    x, y,
+    r: 0,
+    growing:  true,
+    startMs:  performance.now(),
+    popping:  false,
+    popMs:    0,
+    popR:     0,
+  };
+
+  orbs.push(orb);
+
+  el.addEventListener('dblclick', e => {
+    e.stopPropagation();
+    popOrb(orb);
+  });
+
+  return orb;
+}
+
+function setOrbGeometry(orb) {
+  const d = orb.r * 2;
+  orb.el.style.width  = `${d}px`;
+  orb.el.style.height = `${d}px`;
+  orb.el.style.left   = `${orb.x - orb.r}px`;
+  orb.el.style.top    = `${orb.y - orb.r}px`;
+}
+
+function popOrb(orb) {
+  if (orb.popping) return;
+  orb.popping = true;
+  orb.growing = false;
+  orb.popMs   = performance.now();
+  orb.popR    = orb.r;
+  orb.el.classList.add('popping');
+  // Remove element from DOM after CSS burst animation finishes
+  orb.el.addEventListener('animationend', () => orb.el.remove(), { once: true });
+}
+
+// ── Animation loop ─────────────────────────────────────────────────────
+let activeOrb = null;
+
+function animate() {
+  const now   = performance.now();
+  let   dirty = false;
+
+  for (let i = orbs.length - 1; i >= 0; i--) {
+    const orb = orbs[i];
+
+    if (orb.growing) {
+      // Ease-out growth: r = MAX × (1 − e^(−3t/T))
+      const t    = (now - orb.startMs) / GROW_MS;
+      const newR = MAX_R * (1 - Math.exp(-3 * t));
+
+      if (Math.abs(newR - orb.r) > 0.2) {
+        orb.r = newR;
+        setOrbGeometry(orb);
+        dirty = true;
+      }
+
+    } else if (orb.popping) {
+      // Spring-like reflow: radius decays with ease-out over POP_MS
+      const t    = Math.min((now - orb.popMs) / POP_MS, 1);
+      const newR = orb.popR * Math.pow(1 - t, 1.6);
+
+      if (Math.abs(newR - orb.r) > 0.1) {
+        orb.r = newR;
+        dirty = true;
+      }
+
+      if (t >= 1) {
+        orb.r = 0;
+        orbs.splice(i, 1);
+        dirty = true;
+      }
+    }
+  }
+
+  if (dirty) renderText();
+
+  requestAnimationFrame(animate);
+}
+
+// ── Input events ───────────────────────────────────────────────────────
+stage.addEventListener('mousedown', e => {
+  if (e.target.closest('.orb')) return;   // don't spawn on orb interaction
+  activeOrb = createOrb(e.clientX, e.clientY);
+});
+
+// mouseup on window so release outside stage still stops growth
+window.addEventListener('mouseup', () => {
+  if (activeOrb) {
+    activeOrb.growing = false;
+    activeOrb = null;
+  }
+});
+
+// ── Boot ───────────────────────────────────────────────────────────────
+await document.fonts.ready;
+prepared = prepareWithSegments(PROSE, FONT);
+renderText();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

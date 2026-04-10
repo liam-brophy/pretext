@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Falling Words</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #f5f0e8;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+}
+
+/* In-column word span */
+.w {
+  position: absolute;
+  font: 18px/1 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+  color: #1c1612;
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Enabled after first paint so initial positions don't animate */
+.w.t {
+  transition:
+    left 380ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    top  380ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Falling / settled word — fixed so physics uses viewport coords */
+.f {
+  position: fixed;
+  font: 18px/1 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+  color: #1c1612;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0.88;
+}
+
+.hint {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: italic 13px/1 'Libre Baskerville', Georgia, serif;
+  color: #9a8878;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<p class="hint">Hover a word to release it</p>
+<script type="module">
+import { prepareWithSegments, layoutWithLines }
+  from 'https://esm.sh/@chenglou/pretext@0.0.4';
+
+// ── Configuration ──────────────────────────────────────────────────────
+const FONT      = '18px "Libre Baskerville", Georgia, "Times New Roman", serif';
+const LINE_H    = 32;
+const GRAVITY   = 780;  // px / s²
+const COL_FRAC  = 0.60;
+const TOP_PX    = Math.round(window.innerHeight * 0.09);
+const HOVER_MS  = 150;  // dwell before fall commits
+const REFLOW_MS = 130;  // delay before reflow fires
+
+// ── Prose: Joseph Conrad, "Lord Jim" (1900) — public domain ───────────
+const PROSE = [
+  'A marvellous stillness pervaded the world, and the stars, together with',
+  'the serenity of their rays, seemed to shed upon the earth the assurance',
+  'of everlasting security. The young moon recurved, and shining low in the',
+  'west, was like a slender shaving thrown up from a bar of gold, and the',
+  'Arabian Sea, smooth and cool to the eye like a sheet of ice, extended',
+  'its perfect level to the perfect circle of a dark horizon. The propeller',
+  'turned without a check, as though its beat had been part of the scheme',
+  'of a safe universe; and on each side of the Patna two deep folds of',
+  'water, permanent and sombre on the unwrinkled shimmer, enclosed within',
+  'their straight and diverging ridges a few white swirls of foam bursting',
+  'in a low hiss, a few wavelets, a few ripples, a lot of calm.',
+].join(' ');
+
+// ── Geometry ───────────────────────────────────────────────────────────
+const COL_W    = Math.round(window.innerWidth * COL_FRAC);
+const COL_LEFT = Math.round((window.innerWidth - COL_W) / 2);
+
+// Canvas for word measurement — same font engine Pretext uses
+const mc  = document.createElement('canvas').getContext('2d');
+mc.font   = FONT;
+const mw  = t => mc.measureText(t).width;
+const SPC = mw(' ');
+
+// ── Token state ────────────────────────────────────────────────────────
+let uid    = 0;
+let tokens = PROSE.split(/\s+/).filter(Boolean).map(text => ({ id: uid++, text }));
+const gone  = new Set();         // IDs of fallen words
+const spans = new Map();         // id → HTMLSpanElement
+const stage = document.getElementById('stage');
+
+// ── Compute justified word positions from token list ───────────────────
+function positions(toks) {
+  if (!toks.length) return [];
+  const text = toks.map(t => t.text).join(' ');
+  const prep  = prepareWithSegments(text, FONT);
+  const { lines } = layoutWithLines(prep, COL_W, LINE_H);
+
+  const out = [];
+  for (let li = 0; li < lines.length; li++) {
+    const { text: lt } = lines[li];
+    const isLast = li === lines.length - 1;
+    const words  = lt.split(/\s+/).filter(Boolean);
+    const ww     = words.map(mw);
+    const totalW = ww.reduce((a, b) => a + b, 0);
+
+    // Justified gap: distribute extra space between words (not on last line)
+    const gap = words.length <= 1 || isLast
+      ? SPC
+      : (COL_W - totalW) / (words.length - 1);
+
+    let x = 0;
+    for (let wi = 0; wi < words.length; wi++) {
+      out.push({ x: Math.round(COL_LEFT + x), y: TOP_PX + li * LINE_H, w: ww[wi] });
+      x += ww[wi] + gap;
+    }
+  }
+  return out;
+}
+
+// ── Render / reflow ────────────────────────────────────────────────────
+function render(animate = false) {
+  // Enable transitions on existing spans before updating positions
+  if (animate) {
+    for (const [, el] of spans) el.classList.add('t');
+  }
+
+  const active = tokens.filter(t => !gone.has(t.id));
+  const pos    = positions(active);
+
+  for (let i = 0; i < active.length && i < pos.length; i++) {
+    const tok = active[i];
+    const p   = pos[i];
+
+    let el = spans.get(tok.id);
+    if (!el) {
+      el = document.createElement('span');
+      el.className  = 'w';
+      el.textContent = tok.text;
+      stage.appendChild(el);
+      spans.set(tok.id, el);
+      attachHover(tok.id, el);
+    }
+    el.style.left = `${p.x}px`;
+    el.style.top  = `${p.y}px`;
+  }
+}
+
+// ── Hover — dwell timer prevents accidental drops ──────────────────────
+function attachHover(id, el) {
+  let timer = null;
+  el.addEventListener('mouseenter', () => {
+    timer = setTimeout(() => { timer = null; startFall(id, el); }, HOVER_MS);
+  });
+  el.addEventListener('mouseleave', () => {
+    clearTimeout(timer);
+    timer = null;
+  });
+}
+
+// ── Fall mechanics ─────────────────────────────────────────────────────
+const fallers = [];
+
+function startFall(id, el) {
+  if (gone.has(id)) return;
+  gone.add(id);
+  spans.delete(id);
+
+  const rect = el.getBoundingClientRect();
+  const w    = mw(el.textContent);
+
+  // Detach from stage; switch to fixed positioning for physics
+  stage.removeChild(el);
+  document.body.appendChild(el);
+  el.className  = 'f';
+  el.style.left = `${rect.left}px`;
+  el.style.top  = `${rect.top}px`;
+
+  fallers.push({ el, x: rect.left, y: rect.top, vy: 0, w, settled: false });
+
+  // Reflow remaining words after a short delay (the detach lag)
+  setTimeout(() => render(true), REFLOW_MS);
+}
+
+// ── Terrain height map for pile stacking ───────────────────────────────
+// terrain[i] = current floor Y at horizontal bucket i
+// Floor starts just above the viewport bottom; words land on it and stack
+const RES     = 4;   // px per bucket
+const terrLen = Math.ceil(window.innerWidth / RES);
+const terrain = new Float32Array(terrLen).fill(window.innerHeight - 16);
+
+function landY(fx, fw) {
+  const i0 = Math.max(0, Math.floor(fx / RES));
+  const i1 = Math.min(terrLen - 1, Math.ceil((fx + fw) / RES));
+  let floor = Infinity;
+  for (let i = i0; i <= i1; i++) floor = Math.min(floor, terrain[i]);
+  return floor - LINE_H - 2;   // word top: 2px gap above current floor
+}
+
+function settleTerrain(fx, fy, fw) {
+  const i0 = Math.max(0, Math.floor(fx / RES));
+  const i1 = Math.min(terrLen - 1, Math.ceil((fx + fw) / RES));
+  for (let i = i0; i <= i1; i++) terrain[i] = Math.min(terrain[i], fy);
+}
+
+// ── Physics loop — Euler integration ──────────────────────────────────
+let prevTs = null;
+
+function tick(ts) {
+  if (!prevTs) prevTs = ts;
+  const dt = Math.min((ts - prevTs) / 1000, 0.05);  // cap at 50 ms
+  prevTs = ts;
+
+  for (const f of fallers) {
+    if (f.settled) continue;
+
+    f.vy += GRAVITY * dt;
+    f.y  += f.vy * dt;
+
+    const ly = landY(f.x, f.w);
+    if (f.y >= ly) {
+      f.y  = ly;
+      f.vy = 0;
+      f.settled = true;
+      settleTerrain(f.x, f.y, f.w);
+    }
+
+    f.el.style.top = `${Math.round(f.y)}px`;
+  }
+
+  requestAnimationFrame(tick);
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────
+await document.fonts.ready;
+render();           // initial paint — no transitions
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
