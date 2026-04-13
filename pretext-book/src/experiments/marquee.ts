@@ -1,5 +1,5 @@
 import type { PreparedTextWithSegments } from '@chenglou/pretext';
-import { BODY_FONT, COLUMN } from '../setup';
+import { BODY_FONT } from '../setup';
 import { PROSE } from '../prose';
 
 // ── Experiment: Marquee ───────────────────────────────────────────────────────
@@ -24,11 +24,12 @@ function mulberry32(seed: number) {
 export function start(
   ctx: CanvasRenderingContext2D,
   _prepared: PreparedTextWithSegments | null,
-  column: typeof COLUMN,
+  column: import("../main").Column,
+  text: string = PROSE,
 ): () => void {
   // ── Build word ribbon ──────────────────────────────────────────────────────
   // Flatten prose to one continuous string (paragraph breaks → double space)
-  const flat = PROSE.replace(/\n+/g, '  ').replace(/  +/g, '  ');
+  const flat = text.replace(/\n+/g, '  ').replace(/  +/g, '  ');
 
   ctx.font = BODY_FONT;
   const spaceW = ctx.measureText(' ').width;

@@ -7,29 +7,45 @@ html, body {
   font-family: 'Lora', Georgia, serif;
 }
 
+/* ── Layout shell ──────────────────────────────────────────────────────────── */
 #layout {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 48px 24px 64px;
-  gap: 32px;
+  padding: 32px 16px 80px;
+  gap: 24px;
 }
 
+/* ── Canvas ────────────────────────────────────────────────────────────────── */
 #canvas {
   display: block;
-  width: 576px;
-  height: 864px;
   background: #fdfaf4;
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.10),
-    0 1px  3px rgba(0, 0, 0, 0.07);
+    0 6px 28px rgba(0,0,0,0.13),
+    0 1px  4px rgba(0,0,0,0.07);
+  transition: border-radius 0.25s ease, background 0.25s ease;
+  /* Shrink canvas on narrow screens so it never overflows */
+  max-width: 100%;
+  height: auto !important;     /* let CSS scale the visual display */
+  object-fit: contain;
 }
 
+/* On mobile, limit the canvas CSS width to viewport minus gutters */
+@media (max-width: 640px) {
+  #canvas {
+    width: min(100%, 480px) !important;
+    height: auto !important;
+  }
+}
+
+/* ── Experiment nav ────────────────────────────────────────────────────────── */
 #nav {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: center;
+  width: 100%;
+  max-width: 620px;
 }
 
 #nav button {
@@ -37,23 +53,267 @@ html, body {
   font-size: 11px;
   font-variant: small-caps;
   letter-spacing: 0.12em;
-  text-transform: lowercase;
   color: #8a7a68;
   background: transparent;
   border: 1px solid #d0c8bc;
   border-radius: 3px;
-  padding: 6px 16px;
+  padding: 7px 14px;
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  /* Touch-friendly tap target */
+  min-height: 36px;
+}
+#nav button:hover  { color: #3a2a1a; border-color: #9a8878; }
+#nav button.active { color: #3a2a1a; border-color: #6a5a4a; background: rgba(90,70,50,0.06); }
+
+/* ── Controls panel ────────────────────────────────────────────────────────── */
+#controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 20px 24px;
+  padding: 18px 20px;
+  border: 1px solid #ddd6cc;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.50);
+  width: 100%;
+  max-width: 700px;
+}
+
+/* On very small screens, single column */
+@media (max-width: 400px) {
+  #controls { grid-template-columns: 1fr 1fr; }
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.control-label {
+  font-size: 9px;
+  font-variant: small-caps;
+  letter-spacing: 0.14em;
+  color: #9a8878;
+  text-transform: lowercase;
+}
+
+/* ── Colour picker ─────────────────────────────────────────────────────────── */
+.color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d0c8bc;
+  border-radius: 50%;
+  padding: 2px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+input[type="color"]:hover { border-color: #9a8878; }
+/* Remove inner swatch padding on Chrome/Safari */
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+input[type="color"]::-moz-color-swatch { border: none; border-radius: 50%; }
+
+.color-hex {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: #9a8878;
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+
+/* ── Corner radius slider ──────────────────────────────────────────────────── */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100px;
+  height: 3px;
+  background: #d0c8bc;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #6a5a4a;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+input[type="range"]::-webkit-slider-thumb:hover { background: #3a2a1a; }
+input[type="range"]::-moz-range-thumb {
+  width: 16px; height: 16px;
+  border-radius: 50%; border: none;
+  background: #6a5a4a; cursor: pointer;
+}
+
+.slider-val {
+  font-size: 10px;
+  color: #9a8878;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  min-width: 30px;
+}
+
+/* ── Size presets ──────────────────────────────────────────────────────────── */
+.size-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.size-btn {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 10px;
+  font-variant: small-caps;
+  letter-spacing: 0.10em;
+  color: #8a7a68;
+  background: transparent;
+  border: 1px solid #d0c8bc;
+  border-radius: 3px;
+  padding: 5px 9px;
+  cursor: pointer;
+  min-height: 30px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.size-btn:hover  { color: #3a2a1a; border-color: #9a8878; }
+.size-btn.active { color: #3a2a1a; border-color: #6a5a4a; background: rgba(90,70,50,0.06); }
+
+/* ── Edit text button ──────────────────────────────────────────────────────── */
+#edit-text-btn {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 10px;
+  font-variant: small-caps;
+  letter-spacing: 0.10em;
+  color: #8a7a68;
+  background: transparent;
+  border: 1px solid #d0c8bc;
+  border-radius: 3px;
+  padding: 7px 14px;
+  cursor: pointer;
+  min-height: 34px;
+  align-self: flex-start;
   transition: color 0.15s, border-color 0.15s;
 }
+#edit-text-btn:hover { color: #3a2a1a; border-color: #9a8878; }
 
-#nav button:hover {
-  color: #3a2a1a;
-  border-color: #9a8878;
+/* ── Text editor overlay ───────────────────────────────────────────────────── */
+#text-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(30,22,14,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(3px);
+  padding: 16px;
+}
+#text-overlay.hidden { display: none; }
+
+#text-panel {
+  background: #fdfaf4;
+  border-radius: 8px;
+  padding: 24px 24px 20px;
+  width: min(600px, 100%);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.22);
+  overflow: hidden;
 }
 
-#nav button.active {
+#text-panel-title {
+  font-size: 13px;
+  font-variant: small-caps;
+  letter-spacing: 0.12em;
+  font-weight: 400;
   color: #3a2a1a;
-  border-color: #6a5a4a;
-  background: rgba(90, 70, 50, 0.06);
+  flex-shrink: 0;
 }
+
+#text-area {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #1c1612;
+  background: #fff;
+  border: 1px solid #d0c8bc;
+  border-radius: 4px;
+  padding: 12px 14px;
+  resize: vertical;
+  min-height: 180px;
+  flex: 1;
+  overflow-y: auto;
+  outline: none;
+  transition: border-color 0.15s;
+}
+#text-area:focus { border-color: #9a8878; }
+
+#text-note {
+  font-size: 11px;
+  font-style: italic;
+  color: #9a8878;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+#text-note code {
+  font-family: ui-monospace, monospace;
+  font-style: normal;
+  font-size: 10px;
+  background: rgba(90,70,50,0.07);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+#text-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+#text-actions button {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 11px;
+  font-variant: small-caps;
+  letter-spacing: 0.10em;
+  border-radius: 3px;
+  padding: 8px 20px;
+  cursor: pointer;
+  min-height: 36px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+#text-cancel {
+  color: #8a7a68;
+  background: transparent;
+  border: 1px solid #d0c8bc;
+}
+#text-cancel:hover { border-color: #9a8878; color: #3a2a1a; }
+
+#text-apply {
+  color: #fdfaf4;
+  background: #6a5a4a;
+  border: 1px solid #6a5a4a;
+}
+#text-apply:hover    { background: #3a2a1a; border-color: #3a2a1a; }
+#text-apply:disabled { opacity: 0.5; cursor: not-allowed; }

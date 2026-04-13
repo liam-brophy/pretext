@@ -1,5 +1,5 @@
 import { prepareWithSegments, layoutNextLine, type PreparedTextWithSegments } from '@chenglou/pretext';
-import { BODY_FONT, COLUMN, canvas } from '../setup';
+import { BODY_FONT, canvas } from '../setup';
 import { PROSE } from '../prose';
 import { justifiedWordPositions } from '../justify';
 
@@ -19,9 +19,9 @@ interface WordBox {
 export function start(
   ctx: CanvasRenderingContext2D,
   _prepared: PreparedTextWithSegments | null,
-  column: typeof COLUMN,
+  column: import("../main").Column,
 ): () => void {
-  const prepared = prepareWithSegments(PROSE, BODY_FONT);
+  const prepared = _prepared ?? prepareWithSegments(PROSE, BODY_FONT);
 
   ctx.font         = BODY_FONT;
   ctx.textAlign    = 'left';

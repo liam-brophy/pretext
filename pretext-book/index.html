@@ -10,15 +10,72 @@
   </head>
   <body>
     <div id="layout">
+
       <canvas id="canvas"></canvas>
+
+      <!-- Experiment switcher -->
       <nav id="nav">
-        <button data-exp="tree">Tree</button>
+        <button data-exp="snake">Creature</button>
         <button data-exp="orb">Orb</button>
         <button data-exp="redaction">Redaction</button>
-        <button data-exp="compression">Compression</button>
+        <button data-exp="footnote">Footnotes</button>
         <button data-exp="marquee">Marquee</button>
       </nav>
+
+      <!-- Page controls -->
+      <section id="controls">
+
+        <div class="control-group">
+          <label class="control-label" for="paper-color">Paper</label>
+          <div class="color-picker-row">
+            <input type="color" id="paper-color" value="#fdfaf4" title="Paper colour" />
+            <span class="color-hex" id="paper-hex">#fdfaf4</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label" for="radius-slider">Corners</label>
+          <div class="slider-row">
+            <input type="range" id="radius-slider" min="0" max="40" value="0" />
+            <span class="slider-val" id="radius-val">0 px</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <span class="control-label">Size</span>
+          <div class="size-row">
+            <button class="size-btn active" data-size="book"   title="6×9 in">Book</button>
+            <button class="size-btn"        data-size="pocket" title="5×7 in">Pocket</button>
+            <button class="size-btn"        data-size="a5"     title="148×210 mm">A5</button>
+            <button class="size-btn"        data-size="letter" title="8.5×11 in">Letter</button>
+            <button class="size-btn"        data-size="square" title="600×600 px">Square</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <span class="control-label">Text</span>
+          <button id="edit-text-btn">Edit passage</button>
+        </div>
+
+      </section>
     </div>
+
+    <!-- Text editor overlay -->
+    <div id="text-overlay" class="hidden">
+      <div id="text-panel">
+        <h2 id="text-panel-title">Edit Passage</h2>
+        <textarea id="text-area" spellcheck="false"></textarea>
+        <p id="text-note">
+          Pretext re-runs <code>prepareWithSegments</code> on every change.
+          All experiments re-layout immediately against the new text.
+        </p>
+        <div id="text-actions">
+          <button id="text-cancel">Cancel</button>
+          <button id="text-apply">Apply</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

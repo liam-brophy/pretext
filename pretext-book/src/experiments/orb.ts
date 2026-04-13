@@ -1,5 +1,5 @@
 import { prepareWithSegments, layoutNextLine, type PreparedTextWithSegments, type LayoutCursor } from '@chenglou/pretext';
-import { BODY_FONT, COLUMN } from '../setup';
+import { BODY_FONT } from '../setup';
 import { PROSE } from '../prose';
 import { drawJustified } from '../justify';
 
@@ -16,9 +16,9 @@ const CLEARANCE     = 60;   // extra buffer added to exclusion zone
 export function start(
   ctx: CanvasRenderingContext2D,
   _prepared: PreparedTextWithSegments | null,
-  column: typeof COLUMN,
+  column: import("../main").Column,
 ): () => void {
-  const prepared = prepareWithSegments(PROSE, BODY_FONT);
+  const prepared = _prepared ?? prepareWithSegments(PROSE, BODY_FONT);
 
   const cx = column.x + column.width / 2;
   const cy = column.y + column.height * 0.45;
